@@ -8,11 +8,13 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Umożliwia zapisywanie do repozytorium
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
       - name: Ustawienie Pythona
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: '3.x'
 
@@ -21,15 +23,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Wyświetl pliki w katalogu roboczym
+        run: ls -la
+
       - name: Uruchom skrypt
         run: |
-          python main.py
+          python 1download.py
 
       - name: Publikacja wyników
-        uses: peaceiris/actions-gh-pages@v3
+        uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./  # Katalog z plikiem HTML i wykresami
+          publish_branch: gh-pages
           force_orphan: true
-          user_name: GitHub Actions
-          user_email: actions@github.com
+          commit_message: "Deploy GitHub Pages"
