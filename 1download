@@ -1,6 +1,5 @@
 import yfinance as yf
 import pandas as pd
-import os
 from datetime import datetime, timedelta
 from jinja2 import Environment, FileSystemLoader
 import matplotlib.pyplot as plt
@@ -14,7 +13,7 @@ polskie_spolki = [
 ]
 amerykanskie_spolki = [
     'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA',
-    'META', 'NVDA', 'BRK-B', 'JNJ', 'V', 'MSTR'
+    'META', 'NVDA', 'BRK-B', 'JNJ', 'V'
 ]
 metale_szlachetne = ['GC=F', 'SI=F', 'PL=F', 'PA=F']
 surowce = ['CL=F', 'NG=F', 'BZ=F', 'HG=F']
@@ -52,35 +51,10 @@ def pobierz_dane(ticker, start, end):
         return None
 
 def aktualizuj_dane(ticker):
-    """Sprawdza, czy dane dla tickera są aktualne i w razie potrzeby je pobiera."""
-    plik = f'{ticker}_data.csv'
-    if os.path.exists(plik):
-        # Odczyt istniejących danych
-        df = pd.read_csv(plik, index_col=0, parse_dates=True)
-        # Sprawdzenie ostatniej dostępnej daty
-        ostatnia_data = df.index[-1]
-        if ostatnia_data.date() >= (dzisiaj - timedelta(days=1)).date():
-            print(f"Dane dla {ticker} są aktualne.")
-            return df
-        else:
-            # Pobranie nowych danych od ostatniej daty do dzisiaj
-            start = (ostatnia_data + timedelta(days=1)).strftime('%Y-%m-%d')
-            end = dzisiaj.strftime('%Y-%m-%d')
-            print(f"Aktualizuję dane dla {ticker} od {start} do {end}...")
-            nowe_dane = pobierz_dane(ticker, start, end)
-            if nowe_dane is not None:
-                df = pd.concat([df, nowe_dane])
-                df = df[~df.index.duplicated(keep='last')]
-                df.sort_index(inplace=True)
-                df.to_csv(plik)
-            return df
-    else:
-        # Pobranie pełnych danych od start_date do dzisiaj
-        print(f"Pobieram dane dla {ticker} od {start_date.strftime('%Y-%m-%d')} do {dzisiaj.strftime('%Y-%m-%d')}...")
-        df = pobierz_dane(ticker, start_date.strftime('%Y-%m-%d'), dzisiaj.strftime('%Y-%m-%d'))
-        if df is not None:
-            df.to_csv(plik)
-        return df
+    """Pobiera dane dla tickera."""
+    print(f"Pobieram dane dla {ticker} od {start_date.strftime('%Y-%m-%d')} do {dzisiaj.strftime('%Y-%m-%d')}...")
+    df = pobierz_dane(ticker, start_date.strftime('%Y-%m-%d'), dzisiaj.strftime('%Y-%m-%d'))
+    return df
 
 # Pobieranie danych dla wszystkich aktywów
 dane = {}
@@ -125,9 +99,9 @@ def sprawdz_kryteria_minerviniego(df, ticker):
     df.loc[kryteria_splnione == 4, 'minervini_ocena'] = 'żółta'
     df.loc[kryteria_splnione == 5, 'minervini_ocena'] = 'zielona'
 
-    # Zapisanie wszystkich obliczeń do CSV
-    df_do_zapisu = df[['Close', 'SMA_50', 'SMA_150', 'SMA_200', '52_tyg_min', '52_tyg_max', 'minervini_ocena']]
-    df_do_zapisu.to_csv(f"{ticker}_obliczenia.csv")
+    # Opcjonalnie: Zapisanie wszystkich obliczeń do CSV (tylko jeśli potrzebne)
+    # df_do_zapisu = df[['Close', 'SMA_50', 'SMA_150', 'SMA_200', '52_tyg_min', '52_tyg_max', 'minervini_ocena']]
+    # df_do_zapisu.to_csv(f"{ticker}_obliczenia.csv")
 
     return df[['minervini_ocena']].copy()
 
@@ -135,7 +109,6 @@ def sprawdz_kryteria_minerviniego(df, ticker):
 wszystkie_oceny = []
 for ticker, df in dane.items():
     print(f"Przetwarzam dane dla {ticker}...")
-    # Brak reindeksacji przed obliczeniami
     df_oceny = sprawdz_kryteria_minerviniego(df, ticker)
     if df_oceny is not None:
         df_oceny['Ticker'] = ticker
@@ -225,6 +198,7 @@ szablon_html = '''
 <head>
     <meta charset="UTF-8">
     <title>Wyniki Analizy Minerviniego</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         table { border-collapse: collapse; }
         th, td { border: 1px solid #ccc; padding: 5px; text-align: center; }
