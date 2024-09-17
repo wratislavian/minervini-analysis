@@ -27,13 +27,18 @@ jobs:
       - name: Create .nojekyll file
         run: echo > .nojekyll
 
+      - name: Move wyniki_minervini.html to output folder
+        run: |
+          mkdir output
+          mv wyniki_minervini.html output/
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: 'wyniki_minervini.html'  # Publikuj tylko plik wyniki_minervini.html
+          path: './output'  # Używamy katalogu "output" do publikacji
 
       - name: Deploy to GitHub Pages
         id: deployment
