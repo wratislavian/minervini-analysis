@@ -30,14 +30,21 @@ jobs:
         run: |
           python 1download.py
 
-      - name: Sprawdź, czy są zmiany do commitowania
+      - name: Commituj i pushuj zmiany, jeśli są
         run: |
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
-          git diff --quiet || git add . && git commit -m "Zaktualizowano wyniki analizy Minerviniego" && git push origin main
+          if [ -n "$(git status --porcelain)" ]; then
+            git add .
+            git commit -m "Zaktualizowano wyniki analizy Minerviniego"
+            git push origin main
+          else
+            echo "Brak zmian do commitowania"
+          fi
 
       - name: Deploy na GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./  # Katalog z plikiem HTML
+          
