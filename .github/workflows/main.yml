@@ -2,8 +2,12 @@ name: Uruchom Analizę Minerviniego
 
 on:
   schedule:
-    - cron: '0 21 * * *'  # Uruchamia się codziennie o 21:00 UTC (zamknięcie NYSE)
-  workflow_dispatch:      # Pozwala na ręczne uruchomienie workflow z interfejsu GitHuba
+    # Potencjalne godziny uruchomienia (UTC)
+    - cron: '30 12 * * *'  # 14:30 czasu polskiego (CEST)
+    - cron: '30 13 * * *'  # 14:30 czasu polskiego (CET)
+    - cron: '30 20 * * *'  # 22:30 czasu polskiego (CEST)
+    - cron: '30 21 * * *'  # 22:30 czasu polskiego (CET)
+  workflow_dispatch:  # Pozwala na ręczne uruchomienie workflow z interfejsu GitHuba
 
 jobs:
   build:
@@ -14,7 +18,7 @@ jobs:
       id-token: write
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Ustawienie Pythona
         uses: actions/setup-python@v4
@@ -25,6 +29,15 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      - name: Sprawdź, czy to właściwy czas
+        run: |
+          TZ="Europe/Warsaw"  # Ustawienie strefy czasowej na polską
+          CURRENT_TIME=$(date +"%H:%M")
+          if [[ "$CURRENT_TIME" != "14:30" && "$CURRENT_TIME" != "22:30" ]]; then
+            echo "To nie jest właściwy czas. Zakończono."
+            exit 0
+          fi
 
       - name: Uruchom skrypt
         run: |
@@ -47,4 +60,3 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./  # Katalog z plikiem HTML
-          
