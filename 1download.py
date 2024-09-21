@@ -5,17 +5,11 @@ from jinja2 import Environment, FileSystemLoader
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import matplotlib.dates as mdates
+import numpy as np
 
-# Lista aktywów
-polskie_spolki = [
-    'PKN.WA', 'PZU.WA', 'KGH.WA', 'PEO.WA', 'PKO.WA',
-    'LPP.WA', 'DNP.WA', 'CDR.WA', 'ALR.WA', 'MRC.WA'
-]
-amerykanskie_spolki = [
-    'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA',
-    'META', 'NVDA', 'BRK-B', 'JNJ', 'V',
-    'LLY', 'AVGO', 'WMT', 'JPM', 'UNH'
-]
+# Lista aktywów (pozostaje bez zmian)
+polskie_spolki = ['PKN.WA', 'PZU.WA', 'KGH.WA', 'PEO.WA', 'PKO.WA', 'LPP.WA', 'DNP.WA', 'CDR.WA', 'ALR.WA', 'MRC.WA']
+amerykanskie_spolki = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'BRK-B', 'JNJ', 'V', 'LLY', 'AVGO', 'WMT', 'JPM', 'UNH']
 metale_szlachetne = ['GC=F', 'SI=F', 'PL=F', 'PA=F']
 surowce = ['CL=F', 'NG=F', 'BZ=F', 'HG=F']
 kryptowaluty = ['BTC-USD', 'ETH-USD', 'BNB-USD', 'XRP-USD', 'ADA-USD']
@@ -59,14 +53,8 @@ def aktualizuj_dane(ticker):
     if df is None:
         return None
 
-    # Sprawdzanie, czy najnowsze dane są aktualne (do dzisiaj)
-    latest_data_date = df.index[-1].date()
-    if latest_data_date < dzisiaj.date():
-        print(f"Brak nowych danych dla {ticker}, pomijam.")
-        return None
-    else:
-        print(f"Dane dla {ticker} są aktualne.")
-        return df
+    # Nie pomijamy żadnych danych; zwracamy df do dalszego przetwarzania
+    return df
 
 # Pobieranie danych dla wszystkich aktywów
 dane = {}
@@ -75,7 +63,7 @@ for ticker in aktywa:
     if df is not None:
         dane[ticker] = df
     else:
-        print(f"Brak aktualnych danych dla {ticker}, pomijam.")
+        print(f"Brak danych dla {ticker}, pomijam.")
 
 print("Dane pobrane.")
 
@@ -154,30 +142,29 @@ oceny_df['Date'] = pd.to_datetime(oceny_df['Date']).dt.strftime('%Y-%m-%d')
 start_date_six_months_ago = (dzisiaj - timedelta(days=180)).strftime('%Y-%m-%d')
 oceny_df = oceny_df[oceny_df['Date'] >= start_date_six_months_ago]
 
-# Pivot tabeli
+# Przygotowanie pełnej listy dat
+pelne_daty = pd.date_range(start=start_date_six_months_ago, end=dzisiaj, freq='D')
+pelne_daty_str = pelne_daty.strftime('%Y-%m-%d')
+
+# Pivot tabeli z pełnym zestawem dat
 tabela_pivot = oceny_df.pivot(index='Ticker', columns='Date', values='minervini_ocena')
+tabela_pivot = tabela_pivot.reindex(columns=pelne_daty_str)  # Upewniamy się, że wszystkie daty są obecne
 tabela_pivot = tabela_pivot.reset_index()
 
 # Uzupełnienie brakujących wartości
 tabela_pivot = tabela_pivot.fillna('brak')
 
 # Sortowanie według najnowszej oceny
-date_columns = tabela_pivot.columns.tolist()
-date_columns.remove('Ticker')
-date_columns.sort()
-najnowsza_data = date_columns[-1]  # Najnowsza data
-
+najnowsza_data = pelne_daty_str[-1]  # Najnowsza data
 tabela_pivot['sort_key'] = tabela_pivot[najnowsza_data].map({'zielona': 0, 'żółta': 1, 'czerwona': 2, 'brak': 3})
 tabela_pivot = tabela_pivot.sort_values(by='sort_key').drop('sort_key', axis=1)
 
 # Przygotowanie danych do wykresów
-pelne_daty = pd.date_range(start=start_date_six_months_ago, end=dzisiaj, freq='D')
-pelne_daty_str = pelne_daty.strftime('%Y-%m-%d')
-
 tabela_transponowana = tabela_pivot.set_index('Ticker').T
 tabela_transponowana.index.name = 'Date'
-tabela_transponowana = tabela_transponowana.reindex(pelne_daty_str)
-tabela_transponowana = tabela_transponowana.ffill().bfill()
+
+# Uzupełnienie brakujących wartości
+tabela_transponowana = tabela_transponowana.fillna('brak')
 
 suma_kategorii = pd.DataFrame(index=tabela_transponowana.index)
 for ocena in ['zielona', 'żółta', 'czerwona']:
@@ -265,7 +252,7 @@ szablon_html = '''
 '''
 
 # Przygotowanie listy dat
-daty = date_columns  # Posortowane daty bez 'Ticker'
+daty = pelne_daty_str.tolist()  # Wszystkie daty w zakresie
 
 tabela = tabela_pivot.to_dict(orient='records')
 grupy_nazwy = list(grupy_aktywow.keys())
