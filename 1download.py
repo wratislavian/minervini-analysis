@@ -11,10 +11,7 @@ polskie_spolki = [
     'PKN.WA', 'PZU.WA', 'KGH.WA', 'PEO.WA', 'PKO.WA',
     'LPP.WA', 'DNP.WA', 'CDR.WA', 'ALR.WA', 'MRC.WA'
 ]
-amerykanskie_spolki = [
-    'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA',
-    'META', 'NVDA', 'BRK-B', 'JNJ', 'V','LLY','AVGO','WMT','JPM','UNH'
-]
+amerykanskie_spolki = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA','META', 'NVDA', 'BRK-B', 'JNJ', 'V', 'LLY', 'AVGO', 'WMT', 'JPM', 'UNH']
 metale_szlachetne = ['GC=F', 'SI=F', 'PL=F', 'PA=F']
 surowce = ['CL=F', 'NG=F', 'BZ=F', 'HG=F']
 kryptowaluty = ['BTC-USD', 'ETH-USD', 'BNB-USD', 'XRP-USD', 'ADA-USD']
