@@ -11,7 +11,11 @@ polskie_spolki = [
     'PKN.WA', 'PZU.WA', 'KGH.WA', 'PEO.WA', 'PKO.WA',
     'LPP.WA', 'DNP.WA', 'CDR.WA', 'ALR.WA', 'MRC.WA'
 ]
-amerykanskie_spolki = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'BRK-B', 'JNJ', 'V', 'LLY', 'AVGO', 'WMT', 'JPM', 'UNH']
+amerykanskie_spolki = [
+    'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA',
+    'META', 'NVDA', 'BRK-B', 'JNJ', 'V',
+    'LLY', 'AVGO', 'WMT', 'JPM', 'UNH'
+]
 metale_szlachetne = ['GC=F', 'SI=F', 'PL=F', 'PA=F']
 surowce = ['CL=F', 'NG=F', 'BZ=F', 'HG=F']
 kryptowaluty = ['BTC-USD', 'ETH-USD', 'BNB-USD', 'XRP-USD', 'ADA-USD']
@@ -33,7 +37,12 @@ start_date = dzisiaj - timedelta(days=5*365)  # Około 5 lat
 def pobierz_dane(ticker, start, end):
     """Pobiera dane dla danego tickera."""
     try:
-        df = yf.download(ticker, start=start, end=end, interval='1d')
+        df = yf.download(
+            ticker,
+            start=start,
+            end=end,
+            interval='1d'
+        )
         if df.empty:
             print(f"Brak danych dla {ticker}.")
             return None
@@ -43,20 +52,20 @@ def pobierz_dane(ticker, start, end):
         return None
 
 def aktualizuj_dane(ticker):
-    """Sprawdza, czy są nowe dane i pobiera je w razie potrzeby."""
+    """Pobiera dane dla tickera i sprawdza, czy są aktualne."""
     print(f"Pobieram dane dla {ticker}...")
     df = pobierz_dane(ticker, start_date.strftime('%Y-%m-%d'), dzisiaj.strftime('%Y-%m-%d'))
-    
-    # Jeżeli nie ma danych, zwracamy None
+
     if df is None:
         return None
-    
-    # Sprawdzanie, czy najnowsze dane są aktualne
-    if pd.to_datetime(df.index[-1]).date() == dzisiaj.date():
-        print(f"Dane dla {ticker} są aktualne. Pomijam aktualizację.")
+
+    # Sprawdzanie, czy najnowsze dane są aktualne (do dzisiaj)
+    latest_data_date = df.index[-1].date()
+    if latest_data_date < dzisiaj.date():
+        print(f"Brak nowych danych dla {ticker}, pomijam.")
         return None
     else:
-        print(f"Znaleziono nowe dane dla {ticker}. Aktualizuję wskaźniki.")
+        print(f"Dane dla {ticker} są aktualne.")
         return df
 
 # Pobieranie danych dla wszystkich aktywów
@@ -66,7 +75,7 @@ for ticker in aktywa:
     if df is not None:
         dane[ticker] = df
     else:
-        print(f"Brak nowych danych dla {ticker}, pomijam.")
+        print(f"Brak aktualnych danych dla {ticker}, pomijam.")
 
 print("Dane pobrane.")
 
@@ -153,6 +162,119 @@ tabela_pivot = tabela_pivot.reset_index()
 tabela_pivot = tabela_pivot.fillna('brak')
 
 # Sortowanie według najnowszej oceny
-najnowsza_data = tabela_pivot.columns[-1]  # Ostatnia kolumna to najnowsza data
+date_columns = tabela_pivot.columns.tolist()
+date_columns.remove('Ticker')
+date_columns.sort()
+najnowsza_data = date_columns[-1]  # Najnowsza data
+
 tabela_pivot['sort_key'] = tabela_pivot[najnowsza_data].map({'zielona': 0, 'żółta': 1, 'czerwona': 2, 'brak': 3})
-tabela_pivot = tabela_pivot.sort_values(by='sort_key').drop('sort_key', axis
+tabela_pivot = tabela_pivot.sort_values(by='sort_key').drop('sort_key', axis=1)
+
+# Przygotowanie danych do wykresów
+pelne_daty = pd.date_range(start=start_date_six_months_ago, end=dzisiaj, freq='D')
+pelne_daty_str = pelne_daty.strftime('%Y-%m-%d')
+
+tabela_transponowana = tabela_pivot.set_index('Ticker').T
+tabela_transponowana.index.name = 'Date'
+tabela_transponowana = tabela_transponowana.reindex(pelne_daty_str)
+tabela_transponowana = tabela_transponowana.ffill().bfill()
+
+suma_kategorii = pd.DataFrame(index=tabela_transponowana.index)
+for ocena in ['zielona', 'żółta', 'czerwona']:
+    suma_kategorii[ocena] = (tabela_transponowana == ocena).sum(axis=1)
+
+def tworzenie_wykresu(suma_kategorii, tytul, nazwa_pliku):
+    plt.figure(figsize=(12, 6))
+    dates = pd.to_datetime(suma_kategorii.index)
+    for ocena, kolor in zip(['zielona', 'żółta', 'czerwona'], ['green', 'orange', 'red']):
+        plt.plot(dates, suma_kategorii[ocena], label=ocena.capitalize(), color=kolor)
+    plt.xlabel('Data')
+    plt.ylabel('Liczba aktywów')
+    plt.title(tytul)
+    plt.legend()
+    plt.gca().xaxis.set_major_locator(mdates.MonthLocator(interval=1))
+    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+    plt.gca().yaxis.set_major_locator(MaxNLocator(integer=True))
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.savefig(nazwa_pliku)
+    plt.close()
+
+# Tworzenie wykresu ogólnego
+tworzenie_wykresu(suma_kategorii, 'Trend liczby aktywów w poszczególnych kategoriach (Ogółem)', 'trend.png')
+
+# Tworzenie wykresów dla każdej grupy
+for nazwa_grupy, lista_aktywow in grupy_aktywow.items():
+    tabela_transponowana_grupy = tabela_transponowana[lista_aktywow]
+    suma_kategorii_grupy = pd.DataFrame(index=tabela_transponowana_grupy.index)
+    for ocena in ['zielona', 'żółta', 'czerwona']:
+        suma_kategorii_grupy[ocena] = (tabela_transponowana_grupy == ocena).sum(axis=1)
+    nazwa_pliku = f"trend_{nazwa_grupy.replace(' ', '_').lower()}.png"
+    tworzenie_wykresu(suma_kategorii_grupy, f'Trend liczby aktywów ({nazwa_grupy})', nazwa_pliku)
+
+# Generowanie HTML
+szablon_html = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Wyniki Analizy Minerviniego</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        table { border-collapse: collapse; }
+        th, td { border: 1px solid #ccc; padding: 5px; text-align: center; }
+        .zielona { color: green; }
+        .żółta { color: orange; }
+        .czerwona { color: red; }
+        .brak { color: grey; }
+    </style>
+</head>
+<body>
+    <h1>Wyniki Analizy Minerviniego</h1>
+    <table>
+        <tr>
+            <th>Aktywo</th>
+            {% for data in daty %}
+                <th>{{ data }}</th>
+            {% endfor %}
+        </tr>
+        {% for row in tabela %}
+        <tr>
+            <td>{{ row['Ticker'] }}</td>
+            {% for data in daty %}
+                {% set ocena = row.get(data, 'brak') %}
+                <td class="{{ ocena }}">
+                    {% if ocena != 'brak' %}
+                        &#9679;
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+            {% endfor %}
+        </tr>
+        {% endfor %}
+    </table>
+    <h2>Trend liczby aktywów w poszczególnych kategoriach (Ogółem)</h2>
+    <img src="trend.png" alt="Wykres trendu ogólnego">
+    {% for nazwa_grupy in grupy_nazwy %}
+        <h2>Trend liczby aktywów ({{ nazwa_grupy }})</h2>
+        <img src="trend_{{ nazwa_grupy.replace(' ', '_').lower() }}.png" alt="Wykres trendu {{ nazwa_grupy }}">
+    {% endfor %}
+</body>
+</html>
+'''
+
+# Przygotowanie listy dat
+daty = date_columns  # Posortowane daty bez 'Ticker'
+
+tabela = tabela_pivot.to_dict(orient='records')
+grupy_nazwy = list(grupy_aktywow.keys())
+
+env = Environment(loader=FileSystemLoader('.'))
+template = env.from_string(szablon_html)
+html_output = template.render(daty=daty, tabela=tabela, grupy_nazwy=grupy_nazwy)
+
+with open('wyniki_minervini.html', 'w', encoding='utf-8') as f:
+    f.write(html_output)
+
+print("Plik HTML został wygenerowany jako 'wyniki_minervini.html'.")
