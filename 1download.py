@@ -7,9 +7,16 @@ from matplotlib.ticker import MaxNLocator
 import matplotlib.dates as mdates
 import numpy as np
 
-# Lista aktywów (pozostaje bez zmian)
-polskie_spolki = ['PKN.WA', 'PZU.WA', 'KGH.WA', 'PEO.WA', 'PKO.WA', 'LPP.WA', 'DNP.WA', 'CDR.WA', 'ALR.WA', 'MRC.WA']
-amerykanskie_spolki = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'BRK-B', 'JNJ', 'V', 'LLY', 'AVGO', 'WMT', 'JPM', 'UNH']
+# Lista aktywów
+polskie_spolki = [
+    'PKN.WA', 'PZU.WA', 'KGH.WA', 'PEO.WA', 'PKO.WA',
+    'LPP.WA', 'DNP.WA', 'CDR.WA', 'ALR.WA', 'MRC.WA'
+]
+amerykanskie_spolki = [
+    'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA',
+    'META', 'NVDA', 'BRK-B', 'JNJ', 'V',
+    'LLY', 'AVGO', 'WMT', 'JPM', 'UNH'
+]
 metale_szlachetne = ['GC=F', 'SI=F', 'PL=F', 'PA=F']
 surowce = ['CL=F', 'NG=F', 'BZ=F', 'HG=F']
 kryptowaluty = ['BTC-USD', 'ETH-USD', 'BNB-USD', 'XRP-USD', 'ADA-USD']
@@ -46,14 +53,14 @@ def pobierz_dane(ticker, start, end):
         return None
 
 def aktualizuj_dane(ticker):
-    """Pobiera dane dla tickera i sprawdza, czy są aktualne."""
+    """Pobiera dane dla tickera."""
     print(f"Pobieram dane dla {ticker}...")
     df = pobierz_dane(ticker, start_date.strftime('%Y-%m-%d'), dzisiaj.strftime('%Y-%m-%d'))
 
     if df is None:
         return None
 
-    # Nie pomijamy żadnych danych; zwracamy df do dalszego przetwarzania
+    # Zwracamy df do dalszego przetwarzania
     return df
 
 # Pobieranie danych dla wszystkich aktywów
@@ -151,11 +158,19 @@ tabela_pivot = oceny_df.pivot(index='Ticker', columns='Date', values='minervini_
 tabela_pivot = tabela_pivot.reindex(columns=pelne_daty_str)  # Upewniamy się, że wszystkie daty są obecne
 tabela_pivot = tabela_pivot.reset_index()
 
+# Reverse the date columns so that the latest dates are on the left
+tabela_pivot = tabela_pivot[['Ticker'] + pelne_daty_str[::-1].tolist()]
+
 # Uzupełnienie brakujących wartości
 tabela_pivot = tabela_pivot.fillna('brak')
 
+# Update the 'daty' list for the HTML template
+daty = pelne_daty_str[::-1].tolist()  # Reverse the list of dates
+
+# Adjust 'najnowsza_data' since we've reversed the columns
+najnowsza_data = tabela_pivot.columns[1]  # The first date column after 'Ticker'
+
 # Sortowanie według najnowszej oceny
-najnowsza_data = pelne_daty_str[-1]  # Najnowsza data
 tabela_pivot['sort_key'] = tabela_pivot[najnowsza_data].map({'zielona': 0, 'żółta': 1, 'czerwona': 2, 'brak': 3})
 tabela_pivot = tabela_pivot.sort_values(by='sort_key').drop('sort_key', axis=1)
 
@@ -166,6 +181,10 @@ tabela_transponowana.index.name = 'Date'
 # Uzupełnienie brakujących wartości
 tabela_transponowana = tabela_transponowana.fillna('brak')
 
+# Sort the index to ensure chronological order for plotting
+tabela_transponowana = tabela_transponowana.sort_index()
+
+# Prepare data for plotting
 suma_kategorii = pd.DataFrame(index=tabela_transponowana.index)
 for ocena in ['zielona', 'żółta', 'czerwona']:
     suma_kategorii[ocena] = (tabela_transponowana == ocena).sum(axis=1)
@@ -250,9 +269,6 @@ szablon_html = '''
 </body>
 </html>
 '''
-
-# Przygotowanie listy dat
-daty = pelne_daty_str.tolist()  # Wszystkie daty w zakresie
 
 tabela = tabela_pivot.to_dict(orient='records')
 grupy_nazwy = list(grupy_aktywow.keys())
