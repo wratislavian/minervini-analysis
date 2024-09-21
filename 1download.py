@@ -33,12 +33,7 @@ start_date = dzisiaj - timedelta(days=5*365)  # Około 5 lat
 def pobierz_dane(ticker, start, end):
     """Pobiera dane dla danego tickera."""
     try:
-        df = yf.download(
-            ticker,
-            start=start,
-            end=end,
-            interval='1d'
-        )
+        df = yf.download(ticker, start=start, end=end, interval='1d')
         if df.empty:
             print(f"Brak danych dla {ticker}.")
             return None
@@ -48,20 +43,21 @@ def pobierz_dane(ticker, start, end):
         return None
 
 def aktualizuj_dane(ticker):
-    """Pobiera dane dla tickera."""
-    print(f"Pobieram dane dla {ticker} od {start_date.strftime('%Y-%m-%d')} do {dzisiaj.strftime('%Y-%m-%d')}...")
+    """Sprawdza, czy są nowe dane i pobiera je w razie potrzeby."""
+    print(f"Pobieram dane dla {ticker}...")
+    df = pobierz_dane(ticker, start_date.strftime('%Y-%m-%d'), dzisiaj.strftime('%Y-%m-%d'))
     
-    # Sprawdzenie, czy aktywo to kryptowaluta
-    czy_krypto = ticker in kryptowaluty
-    
-    # Sprawdzenie, czy dziś jest weekend (sobota lub niedziela)
-    dzien_tygodnia = dzisiaj.weekday()
-    if dzien_tygodnia >= 5 and not czy_krypto:
-        print(f"Dziś jest weekend i {ticker} nie jest kryptowalutą. Pomijam pobieranie danych.")
+    # Jeżeli nie ma danych, zwracamy None
+    if df is None:
         return None
     
-    df = pobierz_dane(ticker, start_date.strftime('%Y-%m-%d'), dzisiaj.strftime('%Y-%m-%d'))
-    return df
+    # Sprawdzanie, czy najnowsze dane są aktualne
+    if pd.to_datetime(df.index[-1]).date() == dzisiaj.date():
+        print(f"Dane dla {ticker} są aktualne. Pomijam aktualizację.")
+        return None
+    else:
+        print(f"Znaleziono nowe dane dla {ticker}. Aktualizuję wskaźniki.")
+        return df
 
 # Pobieranie danych dla wszystkich aktywów
 dane = {}
@@ -70,7 +66,7 @@ for ticker in aktywa:
     if df is not None:
         dane[ticker] = df
     else:
-        print(f"Brak danych dla {ticker}, pomijam.")
+        print(f"Brak nowych danych dla {ticker}, pomijam.")
 
 print("Dane pobrane.")
 
@@ -108,4 +104,55 @@ def sprawdz_kryteria_minerviniego(df, ticker, czy_krypto):
     # Kryteria
     kryterium_1 = (df['SMA_50'] > df['SMA_150']) & (df['SMA_50'] > df['SMA_200'])
     kryterium_2 = df['SMA_150'] > df['SMA_200']
-    kryterium_3 = (df['Close'] > df['SMA_50']) & (df['Close'] > 
+    kryterium_3 = (df['Close'] > df['SMA_50']) & (df['Close'] > df['SMA_150']) & (df['Close'] > df['SMA_200'])
+    kryterium_4 = df['Close'] > df['52_tyg_min'] * 1.3
+    kryterium_5 = df['Close'] >= df['52_tyg_max'] * 0.75
+
+    # Sumowanie spełnionych kryteriów
+    kryteria_splnione = kryterium_1.astype(int) + kryterium_2.astype(int) + kryterium_3.astype(int) + kryterium_4.astype(int) + kryterium_5.astype(int)
+
+    # Ocena według liczby spełnionych kryteriów
+    df['minervini_ocena'] = 'czerwona'
+    df.loc[kryteria_splnione == 4, 'minervini_ocena'] = 'żółta'
+    df.loc[kryteria_splnione == 5, 'minervini_ocena'] = 'zielona'
+
+    return df[['minervini_ocena']].copy()
+
+# Przetwarzanie wszystkich aktywów
+wszystkie_oceny = []
+for ticker, df in dane.items():
+    print(f"Przetwarzam dane dla {ticker}...")
+    czy_krypto = ticker in kryptowaluty
+    df_oceny = sprawdz_kryteria_minerviniego(df, ticker, czy_krypto)
+    if df_oceny is not None:
+        df_oceny['Ticker'] = ticker
+        df_oceny = df_oceny.reset_index().rename(columns={'index': 'Date'})
+        wszystkie_oceny.append(df_oceny)
+    else:
+        print(f"Brak wystarczających danych dla {ticker}.")
+
+if not wszystkie_oceny:
+    print("Brak danych do przetworzenia.")
+    exit()
+
+print("Wskaźniki obliczone.")
+
+# Łączenie ocen w jeden DataFrame
+oceny_df = pd.concat(wszystkie_oceny)
+oceny_df['Date'] = pd.to_datetime(oceny_df['Date']).dt.strftime('%Y-%m-%d')
+
+# Filtrowanie danych do ostatnich 6 miesięcy
+start_date_six_months_ago = (dzisiaj - timedelta(days=180)).strftime('%Y-%m-%d')
+oceny_df = oceny_df[oceny_df['Date'] >= start_date_six_months_ago]
+
+# Pivot tabeli
+tabela_pivot = oceny_df.pivot(index='Ticker', columns='Date', values='minervini_ocena')
+tabela_pivot = tabela_pivot.reset_index()
+
+# Uzupełnienie brakujących wartości
+tabela_pivot = tabela_pivot.fillna('brak')
+
+# Sortowanie według najnowszej oceny
+najnowsza_data = tabela_pivot.columns[-1]  # Ostatnia kolumna to najnowsza data
+tabela_pivot['sort_key'] = tabela_pivot[najnowsza_data].map({'zielona': 0, 'żółta': 1, 'czerwona': 2, 'brak': 3})
+tabela_pivot = tabela_pivot.sort_values(by='sort_key').drop('sort_key', axis
