@@ -13,7 +13,7 @@ polskie_spolki = [
 ]
 amerykanskie_spolki = [
     'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA',
-    'META', 'NVDA', 'BRK-B', 'JNJ', 'V','LLY','WMT','JPM','UNH','AVGO','XOM'
+    'META', 'NVDA', 'BRK-B', 'JNJ', 'V'
 ]
 metale_szlachetne = ['GC=F', 'SI=F', 'PL=F', 'PA=F']
 surowce = ['CL=F', 'NG=F', 'BZ=F', 'HG=F']
@@ -164,4 +164,102 @@ tabela_transponowana = tabela_transponowana.ffill().bfill()
 # Odwrócenie indeksów do porządku chronologicznego
 tabela_transponowana = tabela_transponowana.iloc[::-1]
 
-s
+suma_kategorii = pd.DataFrame(index=tabela_transponowana.index)
+for ocena in ['zielona', 'żółta', 'czerwona']:
+    suma_kategorii[ocena] = (tabela_transponowana == ocena).sum(axis=1)
+
+def tworzenie_wykresu(suma_kategorii, tytul, nazwa_pliku):
+    plt.figure(figsize=(12, 6))
+    dates = pd.to_datetime(suma_kategorii.index)
+    for ocena, kolor in zip(['zielona', 'żółta', 'czerwona'], ['green', 'orange', 'red']):
+        plt.plot(dates, suma_kategorii[ocena], label=ocena.capitalize(), color=kolor)
+    plt.xlabel('Data')
+    plt.ylabel('Liczba aktywów')
+    plt.title(tytul)
+    plt.legend()
+    plt.gca().xaxis.set_major_locator(mdates.MonthLocator(interval=1))
+    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+    plt.gca().yaxis.set_major_locator(MaxNLocator(integer=True))
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.savefig(nazwa_pliku)
+    plt.close()
+
+# Tworzenie wykresu ogólnego
+tworzenie_wykresu(suma_kategorii, 'Trend liczby aktywów w poszczególnych kategoriach (Ogółem)', 'trend.png')
+
+# Tworzenie wykresów dla każdej grupy
+for nazwa_grupy, lista_aktywow in grupy_aktywow.items():
+    tabela_transponowana_grupy = tabela_transponowana[lista_aktywow]
+    suma_kategorii_grupy = pd.DataFrame(index=tabela_transponowana_grupy.index)
+    for ocena in ['zielona', 'żółta', 'czerwona']:
+        suma_kategorii_grupy[ocena] = (tabela_transponowana_grupy == ocena).sum(axis=1)
+    nazwa_pliku = f"trend_{nazwa_grupy.replace(' ', '_').lower()}.png"
+    tworzenie_wykresu(suma_kategorii_grupy, f'Trend liczby aktywów ({nazwa_grupy})', nazwa_pliku)
+
+# Generowanie HTML
+szablon_html = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Wyniki Analizy Minerviniego</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        table { border-collapse: collapse; }
+        th, td { border: 1px solid #ccc; padding: 5px; text-align: center; }
+        .zielona { color: green; }
+        .żółta { color: orange; }
+        .czerwona { color: red; }
+        .brak { color: grey; }
+    </style>
+</head>
+<body>
+    <h1>Wyniki Analizy Minerviniego</h1>
+    <table>
+        <tr>
+            <th>Aktywo</th>
+            {% for data in daty %}
+                <th>{{ data }}</th>
+            {% endfor %}
+        </tr>
+        {% for row in tabela %}
+        <tr>
+            <td>{{ row['Ticker'] }}</td>
+            {% for data in daty %}
+                {% set ocena = row.get(data, 'brak') %}
+                <td class="{{ ocena }}">
+                    {% if ocena != 'brak' %}
+                        &#9679;
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+            {% endfor %}
+        </tr>
+        {% endfor %}
+    </table>
+    <h2>Trend liczby aktywów w poszczególnych kategoriach (Ogółem)</h2>
+    <img src="trend.png" alt="Wykres trendu ogólnego">
+    {% for nazwa_grupy in grupy_nazwy %}
+        <h2>Trend liczby aktywów ({{ nazwa_grupy }})</h2>
+        <img src="trend_{{ nazwa_grupy.replace(' ', '_').lower() }}.png" alt="Wykres trendu {{ nazwa_grupy }}">
+    {% endfor %}
+</body>
+</html>
+'''
+
+# Przygotowanie listy dat (już odwróconej)
+daty = tabela_pivot.columns[1:].tolist()  # Pomijamy 'Ticker'
+
+tabela = tabela_pivot.to_dict(orient='records')
+grupy_nazwy = list(grupy_aktywow.keys())
+
+env = Environment(loader=FileSystemLoader('.'))
+template = env.from_string(szablon_html)
+html_output = template.render(daty=daty, tabela=tabela, grupy_nazwy=grupy_nazwy)
+
+with open('wyniki_minervini.html', 'w', encoding='utf-8') as f:
+    f.write(html_output)
+
+print("Plik HTML został wygenerowany jako 'wyniki_minervini.html'.")
