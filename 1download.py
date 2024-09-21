@@ -13,7 +13,8 @@ polskie_spolki = [
 ]
 amerykanskie_spolki = [
     'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA',
-    'META', 'NVDA', 'BRK-B', 'JNJ', 'V'
+    'META', 'NVDA', 'BRK-B', 'JNJ', 'V',
+    'LLY', 'AVGO', 'WMT', 'JPM', 'UNH'
 ]
 metale_szlachetne = ['GC=F', 'SI=F', 'PL=F', 'PA=F']
 surowce = ['CL=F', 'NG=F', 'BZ=F', 'HG=F']
@@ -51,10 +52,21 @@ def pobierz_dane(ticker, start, end):
         return None
 
 def aktualizuj_dane(ticker):
-    """Pobiera dane dla tickera."""
-    print(f"Pobieram dane dla {ticker} od {start_date.strftime('%Y-%m-%d')} do {dzisiaj.strftime('%Y-%m-%d')}...")
+    """Pobiera dane dla tickera i sprawdza, czy są aktualne."""
+    print(f"Pobieram dane dla {ticker}...")
     df = pobierz_dane(ticker, start_date.strftime('%Y-%m-%d'), dzisiaj.strftime('%Y-%m-%d'))
-    return df
+
+    if df is None:
+        return None
+
+    # Sprawdzanie, czy najnowsze dane są aktualne (do dzisiaj)
+    latest_data_date = df.index[-1].date()
+    if latest_data_date < dzisiaj.date():
+        print(f"Brak nowych danych dla {ticker}, pomijam.")
+        return None
+    else:
+        print(f"Dane dla {ticker} są aktualne.")
+        return df
 
 # Pobieranie danych dla wszystkich aktywów
 dane = {}
@@ -63,20 +75,34 @@ for ticker in aktywa:
     if df is not None:
         dane[ticker] = df
     else:
-        print(f"Brak danych dla {ticker}, pomijam.")
+        print(f"Brak aktualnych danych dla {ticker}, pomijam.")
 
 print("Dane pobrane.")
 
 def oblicz_sma(df, okres):
     return df['Close'].rolling(window=okres, min_periods=okres).mean()
 
-def sprawdz_kryteria_minerviniego(df, ticker):
-    # Obliczanie wskaźników tylko na dniach handlowych
-    df['SMA_50'] = oblicz_sma(df, 50)
-    df['SMA_150'] = oblicz_sma(df, 150)
-    df['SMA_200'] = oblicz_sma(df, 200)
-    df['52_tyg_min'] = df['Close'].rolling(window=252, min_periods=252).min()
-    df['52_tyg_max'] = df['Close'].rolling(window=252, min_periods=252).max()
+def sprawdz_kryteria_minerviniego(df, ticker, czy_krypto):
+    # Dostosowanie okresów dla kryptowalut
+    if czy_krypto:
+        # Przelicznik dni kalendarzowych na dni handlowe dla kryptowalut (365 dni w roku)
+        mnoznik = 365 / 252  # Około 1.45
+        sma_50_okres = int(50 * mnoznik)
+        sma_150_okres = int(150 * mnoznik)
+        sma_200_okres = int(200 * mnoznik)
+        tyg52_okres = int(252 * mnoznik)
+    else:
+        sma_50_okres = 50
+        sma_150_okres = 150
+        sma_200_okres = 200
+        tyg52_okres = 252
+
+    # Obliczanie wskaźników
+    df['SMA_50'] = oblicz_sma(df, sma_50_okres)
+    df['SMA_150'] = oblicz_sma(df, sma_150_okres)
+    df['SMA_200'] = oblicz_sma(df, sma_200_okres)
+    df['52_tyg_min'] = df['Close'].rolling(window=tyg52_okres, min_periods=tyg52_okres).min()
+    df['52_tyg_max'] = df['Close'].rolling(window=tyg52_okres, min_periods=tyg52_okres).max()
 
     # Usunięcie wierszy z brakującymi wartościami
     df = df.dropna(subset=['SMA_50', 'SMA_150', 'SMA_200', '52_tyg_min', '52_tyg_max']).copy()
@@ -99,17 +125,14 @@ def sprawdz_kryteria_minerviniego(df, ticker):
     df.loc[kryteria_splnione == 4, 'minervini_ocena'] = 'żółta'
     df.loc[kryteria_splnione == 5, 'minervini_ocena'] = 'zielona'
 
-    # Opcjonalnie: Zapisanie wszystkich obliczeń do CSV (tylko jeśli potrzebne)
-    # df_do_zapisu = df[['Close', 'SMA_50', 'SMA_150', 'SMA_200', '52_tyg_min', '52_tyg_max', 'minervini_ocena']]
-    # df_do_zapisu.to_csv(f"{ticker}_obliczenia.csv")
-
     return df[['minervini_ocena']].copy()
 
 # Przetwarzanie wszystkich aktywów
 wszystkie_oceny = []
 for ticker, df in dane.items():
     print(f"Przetwarzam dane dla {ticker}...")
-    df_oceny = sprawdz_kryteria_minerviniego(df, ticker)
+    czy_krypto = ticker in kryptowaluty
+    df_oceny = sprawdz_kryteria_minerviniego(df, ticker, czy_krypto)
     if df_oceny is not None:
         df_oceny['Ticker'] = ticker
         df_oceny = df_oceny.reset_index().rename(columns={'index': 'Date'})
@@ -135,14 +158,15 @@ oceny_df = oceny_df[oceny_df['Date'] >= start_date_six_months_ago]
 tabela_pivot = oceny_df.pivot(index='Ticker', columns='Date', values='minervini_ocena')
 tabela_pivot = tabela_pivot.reset_index()
 
-# Odwrócenie kolejności kolumn
+# Uzupełnienie brakujących wartości
+tabela_pivot = tabela_pivot.fillna('brak')
+
+# Sortowanie według najnowszej oceny
 date_columns = tabela_pivot.columns.tolist()
 date_columns.remove('Ticker')
-date_columns_reversed = date_columns[::-1]
-tabela_pivot = tabela_pivot[['Ticker'] + date_columns_reversed]
+date_columns.sort()
+najnowsza_data = date_columns[-1]  # Najnowsza data
 
-# Sortowanie
-najnowsza_data = tabela_pivot.columns[1]  # Pierwsza kolumna z datą po odwróceniu
 tabela_pivot['sort_key'] = tabela_pivot[najnowsza_data].map({'zielona': 0, 'żółta': 1, 'czerwona': 2, 'brak': 3})
 tabela_pivot = tabela_pivot.sort_values(by='sort_key').drop('sort_key', axis=1)
 
@@ -154,9 +178,6 @@ tabela_transponowana = tabela_pivot.set_index('Ticker').T
 tabela_transponowana.index.name = 'Date'
 tabela_transponowana = tabela_transponowana.reindex(pelne_daty_str)
 tabela_transponowana = tabela_transponowana.ffill().bfill()
-
-# Odwrócenie indeksów do porządku chronologicznego
-tabela_transponowana = tabela_transponowana.iloc[::-1]
 
 suma_kategorii = pd.DataFrame(index=tabela_transponowana.index)
 for ocena in ['zielona', 'żółta', 'czerwona']:
@@ -243,8 +264,8 @@ szablon_html = '''
 </html>
 '''
 
-# Przygotowanie listy dat (już odwróconej)
-daty = tabela_pivot.columns[1:].tolist()  # Pomijamy 'Ticker'
+# Przygotowanie listy dat
+daty = date_columns  # Posortowane daty bez 'Ticker'
 
 tabela = tabela_pivot.to_dict(orient='records')
 grupy_nazwy = list(grupy_aktywow.keys())
