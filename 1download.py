@@ -13,7 +13,7 @@ polskie_spolki = [
 ]
 amerykanskie_spolki = [
     'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA',
-    'META', 'NVDA', 'BRK-B', 'JNJ', 'V'
+    'META', 'NVDA', 'BRK-B', 'JNJ', 'V','LLY','AVGO','WMT','JPM','UNH'
 ]
 metale_szlachetne = ['GC=F', 'SI=F', 'PL=F', 'PA=F']
 surowce = ['CL=F', 'NG=F', 'BZ=F', 'HG=F']
@@ -80,13 +80,27 @@ print("Dane pobrane.")
 def oblicz_sma(df, okres):
     return df['Close'].rolling(window=okres, min_periods=okres).mean()
 
-def sprawdz_kryteria_minerviniego(df, ticker):
-    # Obliczanie wskaźników tylko na dniach handlowych
-    df['SMA_50'] = oblicz_sma(df, 50)
-    df['SMA_150'] = oblicz_sma(df, 150)
-    df['SMA_200'] = oblicz_sma(df, 200)
-    df['52_tyg_min'] = df['Close'].rolling(window=252, min_periods=252).min()
-    df['52_tyg_max'] = df['Close'].rolling(window=252, min_periods=252).max()
+def sprawdz_kryteria_minerviniego(df, ticker, czy_krypto):
+    # Dostosowanie okresów dla kryptowalut
+    if czy_krypto:
+        # Przelicznik dni kalendarzowych na dni handlowe dla kryptowalut (365 dni w roku)
+        mnoznik = 365 / 252  # Około 1.45
+        sma_50_okres = int(50 * mnoznik)
+        sma_150_okres = int(150 * mnoznik)
+        sma_200_okres = int(200 * mnoznik)
+        tyg52_okres = int(252 * mnoznik)
+    else:
+        sma_50_okres = 50
+        sma_150_okres = 150
+        sma_200_okres = 200
+        tyg52_okres = 252
+
+    # Obliczanie wskaźników
+    df['SMA_50'] = oblicz_sma(df, sma_50_okres)
+    df['SMA_150'] = oblicz_sma(df, sma_150_okres)
+    df['SMA_200'] = oblicz_sma(df, sma_200_okres)
+    df['52_tyg_min'] = df['Close'].rolling(window=tyg52_okres, min_periods=tyg52_okres).min()
+    df['52_tyg_max'] = df['Close'].rolling(window=tyg52_okres, min_periods=tyg52_okres).max()
 
     # Usunięcie wierszy z brakującymi wartościami
     df = df.dropna(subset=['SMA_50', 'SMA_150', 'SMA_200', '52_tyg_min', '52_tyg_max']).copy()
@@ -115,7 +129,8 @@ def sprawdz_kryteria_minerviniego(df, ticker):
 wszystkie_oceny = []
 for ticker, df in dane.items():
     print(f"Przetwarzam dane dla {ticker}...")
-    df_oceny = sprawdz_kryteria_minerviniego(df, ticker)
+    czy_krypto = ticker in kryptowaluty
+    df_oceny = sprawdz_kryteria_minerviniego(df, ticker, czy_krypto)
     if df_oceny is not None:
         df_oceny['Ticker'] = ticker
         df_oceny = df_oceny.reset_index().rename(columns={'index': 'Date'})
@@ -146,6 +161,9 @@ date_columns = tabela_pivot.columns.tolist()
 date_columns.remove('Ticker')
 date_columns_reversed = date_columns[::-1]
 tabela_pivot = tabela_pivot[['Ticker'] + date_columns_reversed]
+
+# Uzupełnienie brakujących wartości
+tabela_pivot = tabela_pivot.fillna('brak')
 
 # Sortowanie
 najnowsza_data = tabela_pivot.columns[1]  # Pierwsza kolumna z datą po odwróceniu
