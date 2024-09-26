@@ -2,7 +2,6 @@ import yfinance as yf
 import pandas as pd
 import os
 from datetime import datetime, timedelta
-import matplotlib.pyplot as plt
 
 # Lista aktywów
 polskie_spolki = ['PKN.WA', 'PZU.WA', 'KGH.WA', 'PEO.WA', 'PKO.WA', 'LPP.WA', 'DNP.WA', 'CDR.WA', 'ALR.WA', 'MRC.WA']
@@ -25,8 +24,6 @@ def pobierz_dane(ticker, interval='1d', start=None):
             print(f"Brak danych dla {ticker}. Ticker może być niedostępny.")
             return None
         else:
-            # Usunięcie dzisiejszego dnia z danych
-            df = df[df.index < dzisiaj]
             return df
     except Exception as e:
         print(f"Błąd podczas pobierania danych dla {ticker}: {e}")
@@ -102,21 +99,12 @@ def sprawdz_kryteria_minerviniego(df):
         kryterium_5.astype(int)
     )
     
-    # Dodanie kolumny z wynikami -1 lub +1
-    df.loc[:, 'minervini_ocena'] = kryteria_splnione.apply(lambda x: 1 if x == 5 else -1)
+    # Ocena według liczby spełnionych kryteriów
+    df.loc[:, 'minervini_ocena'] = 'czerwona'
+    df.loc[kryteria_splnione == 4, 'minervini_ocena'] = 'żółta'
+    df.loc[kryteria_splnione == 5, 'minervini_ocena'] = 'zielona'
 
     return df
-
-# Funkcja do obliczania średniej oceny dla każdego dnia
-def oblicz_srednia_ocene(dane):
-    df_oceny = pd.DataFrame()
-    
-    for ticker, df in dane.items():
-        df_oceny[ticker] = df['minervini_ocena']
-    
-    # Obliczenie średniej z każdej kolumny (średnia ocena dla każdego dnia)
-    df_oceny['srednia'] = df_oceny.mean(axis=1)
-    return df_oceny['srednia']
 
 # Przykład dla wszystkich aktywów
 for ticker, df in dane.items():
@@ -124,18 +112,3 @@ for ticker, df in dane.items():
     dane[ticker] = sprawdz_kryteria_minerviniego(df)
 
 print("Wskaźniki obliczone, kryteria Minerviniego sprawdzone.")
-
-# Oblicz średnią ocene dla wszystkich aktywów
-srednia_ocena = oblicz_srednia_ocene(dane)
-
-# Wykres średniej oceny
-plt.figure(figsize=(10, 6))
-srednia_ocena.plot()
-plt.title('Średnia ocena aktywów według kryteriów Minerviniego')
-plt.ylabel('Średnia ocena (+1 lub -1)')
-plt.xlabel('Data')
-plt.grid(True)
-plt.xticks(rotation=45)
-plt.tight_layout()
-plt.savefig('srednia_ocena_aktywow.png')
-plt.show()
