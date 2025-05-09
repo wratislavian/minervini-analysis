@@ -1,114 +1,112 @@
-import yfinance as yf
-import pandas as pd
+#!/usr/bin/env python3
+"""
+Regenerates Minervini dashboard and drops it into docs/wyniki_minervini.html
+Run daily via GitHub Actions.  Requires yfinance, pandas, matplotlib.
+Images saved as PNG and referenced in the html – keeps GH‑Pages light.
+"""
+import base64
+import glob
 import os
 from datetime import datetime, timedelta
 
-# Lista aktywów
-polskie_spolki = ['PKN.WA', 'PZU.WA', 'KGH.WA', 'PEO.WA', 'PKO.WA', 'LPP.WA', 'DNP.WA', 'CDR.WA', 'ALR.WA', 'MRC.WA']
-amerykanskie_spolki = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'BRK-B', 'JNJ', 'V']
-metale_szlachetne = ['GC=F', 'SI=F', 'PL=F', 'PA=F']
-surowce = ['CL=F', 'NG=F', 'BZ=F', 'HG=F']
-aktywa = polskie_spolki + amerykanskie_spolki + metale_szlachetne + surowce
+import matplotlib.pyplot as plt
+import pandas as pd
 
-# Ustawienie dat
-dzisiaj = datetime.today()
-start_date = dzisiaj - timedelta(days=450)  # Około 15 miesięcy
+# ---------------------------------------------------------------------------
+# CONFIG
+# ---------------------------------------------------------------------------
+DOCS_DIR = "docs"  # GH‑Pages points here
+LINE_IMG = os.path.join(DOCS_DIR, "chart_counts.png")
+DOT_IMG = os.path.join(DOCS_DIR, "chart_status.png")
+HTML_OUT = os.path.join(DOCS_DIR, "wyniki_minervini.html")
 
-def pobierz_dane(ticker, interval='1d', start=None):
-    try:
-        if start:
-            df = yf.download(ticker, start=start, end=dzisiaj.strftime('%Y-%m-%d'), interval=interval)
-        else:
-            df = yf.download(ticker, start=start_date.strftime('%Y-%m-%d'), end=dzisiaj.strftime('%Y-%m-%d'), interval=interval)
-        if df.empty:
-            print(f"Brak danych dla {ticker}. Ticker może być niedostępny.")
-            return None
-        else:
-            return df
-    except Exception as e:
-        print(f"Błąd podczas pobierania danych dla {ticker}: {e}")
-        return None
+# ---------------------------------------------------------------------------
+# LOAD DATA
+# ---------------------------------------------------------------------------
+csv_files = glob.glob("*_data.csv")
+if not csv_files:
+    raise SystemExit("Brak plików *_data.csv – nic do roboty.")
 
-def aktualizuj_dane(ticker):
-    plik = f'{ticker}_data.csv'
-    if os.path.exists(plik):
-        df = pd.read_csv(plik, index_col=0, parse_dates=True)
-        ostatnia_data = df.index[-1] + pd.Timedelta(days=1)
-        if ostatnia_data.date() >= dzisiaj.date():
-            print(f"Dane dla {ticker} są aktualne.")
-            return df
-        else:
-            print(f"Aktualizuję dane dla {ticker} od {ostatnia_data.date()}...")
-            nowe_dane = pobierz_dane(ticker, start=ostatnia_data.strftime('%Y-%m-%d'))
-            if nowe_dane is not None:
-                df = pd.concat([df, nowe_dane])
-                df = df[~df.index.duplicated(keep='last')]
-                df.sort_index(inplace=True)
-                df.to_csv(plik)
-    else:
-        print(f"Pobieram dane dla {ticker}...")
-        df = pobierz_dane(ticker)
-        if df is not None:
-            df.to_csv(plik)
-    return df
-
-dane = {}
-for ticker in aktywa:
-    df = aktualizuj_dane(ticker)
-    if df is not None:
-        dane[ticker] = df
-
-print("Dane pobrane i zapisane do plików CSV.")
-
-def oblicz_sma(df, okres):
-    return df['Close'].rolling(window=okres).mean()
-
-def sprawdz_kryteria_minerviniego(df):
-    df['SMA_50'] = oblicz_sma(df, 50)
-    df['SMA_150'] = oblicz_sma(df, 150)
-    df['SMA_200'] = oblicz_sma(df, 200)
-    
-    df['52_tyg_min'] = df['Close'].rolling(window=252).min()
-    df['52_tyg_max'] = df['Close'].rolling(window=252).max()
-
-    # Usunięcie wierszy z brakującymi wartościami
-    df = df.dropna(subset=['SMA_50', 'SMA_150', 'SMA_200', '52_tyg_min', '52_tyg_max'])
-    df = df.copy()  # Upewniamy się, że pracujemy na kopii danych
-
-    # Kryterium 1
-    kryterium_1 = (df['SMA_50'] > df['SMA_150']) & (df['SMA_50'] > df['SMA_200'])
-    
-    # Kryterium 2
-    kryterium_2 = df['SMA_150'] > df['SMA_200']
-    
-    # Kryterium 3
-    kryterium_3 = (df['Close'] > df['SMA_50']) & (df['Close'] > df['SMA_150']) & (df['Close'] > df['SMA_200'])
-    
-    # Kryterium 4
-    kryterium_4 = df['Close'] > df['52_tyg_min'] * 1.3
-    
-    # Kryterium 5
-    kryterium_5 = df['Close'] >= df['52_tyg_max'] * 0.75
-
-    # Sumowanie spełnionych kryteriów
-    kryteria_splnione = (
-        kryterium_1.astype(int) +
-        kryterium_2.astype(int) +
-        kryterium_3.astype(int) +
-        kryterium_4.astype(int) +
-        kryterium_5.astype(int)
+assets: dict[str, pd.DataFrame] = {}
+for fp in csv_files:
+    t = os.path.basename(fp).replace("_data.csv", "")
+    df = (
+        pd.read_csv(fp, index_col=0, parse_dates=True)
+        .sort_index()
+        .dropna(subset=["Close"])
     )
-    
-    # Ocena według liczby spełnionych kryteriów
-    df.loc[:, 'minervini_ocena'] = 'czerwona'
-    df.loc[kryteria_splnione == 4, 'minervini_ocena'] = 'żółta'
-    df.loc[kryteria_splnione == 5, 'minervini_ocena'] = 'zielona'
+    assets[t] = df
 
-    return df
+# ---------------------------------------------------------------------------
+# UTILS
+# ---------------------------------------------------------------------------
 
-# Przykład dla wszystkich aktywów
-for ticker, df in dane.items():
-    print(f"Sprawdzam kryteria dla {ticker}...")
-    dane[ticker] = sprawdz_kryteria_minerviniego(df)
+def add_minervini(df: pd.DataFrame) -> pd.DataFrame:
+    """Return copy with SMA‑s, 52‑week hi/lo and score column."""
+    out = df.copy()
+    out["SMA50"] = out["Close"].rolling(50).mean()
+    out["SMA150"] = out["Close"].rolling(150).mean()
+    out["SMA200"] = out["Close"].rolling(200).mean()
+    out["LOW52"] = out["Close"].rolling(252).min()
+    out["HIGH52"] = out["Close"].rolling(252).max()
 
-print("Wskaźniki obliczone, kryteria Minerviniego sprawdzone.")
+    c1 = (out["SMA50"] > out["SMA150"]) & (out["SMA50"] > out["SMA200"])
+    c2 = out["SMA150"] > out["SMA200"]
+    c3 = (out["Close"] > out["SMA50"]) & (out["Close"] > out["SMA150"]) & (out["Close"] > out["SMA200"])
+    c4 = out["Close"] > out["LOW52"] * 1.3
+    c5 = out["Close"] >= out["HIGH52"] * 0.75
+
+    out["SCORE"] = c1.astype(int) + c2.astype(int) + c3.astype(int) + c4.astype(int) + c5.astype(int)
+    return out
+
+for t in list(assets):
+    assets[t] = add_minervini(assets[t])
+
+# ---------------------------------------------------------------------------
+# DATE WINDOW (30 calendar days back from latest common date)
+# ---------------------------------------------------------------------------
+latest = max(df.index.max() for df in assets.values())
+start  = latest - timedelta(days=29)  # inclusive
+window = pd.date_range(start, latest, freq="D")
+
+# ---------------------------------------------------------------------------
+# SERIES: HOW MANY MEET 5/5 EACH DAY
+# ---------------------------------------------------------------------------
+count_series = pd.Series(index=window, dtype=int).fillna(0)
+for day in window:
+    count_series.loc[day] = sum(
+        df.loc[day, "SCORE"] == 5 if day in df.index else 0 for df in assets.values()
+    )
+
+# ---------------------------------------------------------------------------
+# PLOT 1 – LINE CHART
+# ---------------------------------------------------------------------------
+plt.figure(figsize=(10, 4))
+plt.plot(count_series.index, count_series.values, marker="o")
+plt.title("Liczba aktywów z wynikiem 5/5 (ostatnie 30 dni)")
+plt.xlabel("Data")
+plt.ylabel("Ilość")
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.savefig(LINE_IMG, dpi=110)
+plt.close()
+
+# ---------------------------------------------------------------------------
+# PLOT 2 – DOT STATUS FOR LATEST DAY
+# ---------------------------------------------------------------------------
+colors = {5: "#2ecc71", 4: "#7f8c8d"}  # green / grey
+
+tickers = list(assets.keys())
+y_pos = range(len(tickers))
+plt.figure(figsize=(6, max(4, len(tickers) * 0.4)))
+for y, t in zip(y_pos, tickers):
+    df = assets[t]
+    score = int(df.loc[latest, "SCORE"]) if latest in df.index else -99
+    col = colors.get(score, "#e74c3c")  # red default
+    plt.scatter(0, y, s=120, c=col)
+plt.yticks(y_pos, tickers)
+plt.gca().get_xaxis().set_visible(False)
+plt.title(f"Status aktywów vs kryteria (stan: {latest.date()})")
+plt.tight_layout()
+plt.savefig(DOT_IMG, dpi=110)
+plt.close()
