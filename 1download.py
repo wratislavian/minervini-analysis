@@ -1,114 +1,79 @@
 #!/usr/bin/env python3
+"""Minervini auto‑dashboard → docs/ (GH‑Pages)
+Run from repo root via `python src/generate.py` (GitHub Action does exactly that).
 """
-Regenerates Minervini dashboard and drops it into docs/wyniki_minervini.html
-Run daily via GitHub Actions. Requires yfinance, pandas, matplotlib.
-"""
-import base64
-import glob
-import os
+from pathlib import Path
 from datetime import datetime, timedelta
-
-import matplotlib.pyplot as plt
+import glob, os
 import pandas as pd
+import matplotlib.pyplot as plt
 
-# ---------------------------------------------------------------------------
-# CONFIG
-# ---------------------------------------------------------------------------
-DOCS_DIR = "docs"  # GH‑Pages points here
-LINE_IMG = os.path.join(DOCS_DIR, "chart_counts.png")
-DOT_IMG = os.path.join(DOCS_DIR, "chart_status.png")
-HTML_OUT = os.path.join(DOCS_DIR, "wyniki_minervini.html")
+# ── paths ────────────────────────────────────────────────────────────────────
+ROOT      = Path(__file__).resolve().parent.parent     # repo root
+DOCS_DIR  = ROOT / "docs"
+LINE_IMG  = DOCS_DIR / "chart_counts.png"
+DOT_IMG   = DOCS_DIR / "chart_status.png"
+HTML_OUT  = DOCS_DIR / "wyniki_minervini.html"
+DOCS_DIR.mkdir(exist_ok=True)
 
-# make sure docs/ exists (GH first run)
-os.makedirs(DOCS_DIR, exist_ok=True)
-
-# ---------------------------------------------------------------------------
-# LOAD DATA
-# ---------------------------------------------------------------------------
-csv_files = glob.glob("*_data.csv")
-if not csv_files:
-    raise SystemExit("Brak plików *_data.csv – nic do roboty.")
-
+# ── load csvs ────────────────────────────────────────────────────────────────
 assets: dict[str, pd.DataFrame] = {}
-for fp in csv_files:
-    t = os.path.basename(fp).replace("_data.csv", "")
-    df = (
-        pd.read_csv(fp, index_col=0, parse_dates=True)
-        .sort_index()
-        .dropna(subset=["Close"])
-    )
+for fp in glob.glob(str(ROOT / "*_data.csv")):
+    t   = Path(fp).name.replace("_data.csv", "")
+    df  = pd.read_csv(fp, index_col=0, parse_dates=True).sort_index()
     assets[t] = df
+if not assets:
+    raise SystemExit("No *_data.csv found – abort.")
 
-# ---------------------------------------------------------------------------
-# UTILS
-# ---------------------------------------------------------------------------
+# ── helpers ──────────────────────────────────────────────────────────────────
 
 def add_minervini(df: pd.DataFrame) -> pd.DataFrame:
-    """Return copy with SMA-s, 52-week hi/lo and score column."""
-    out = df.copy()
-    out["SMA50"] = out["Close"].rolling(50).mean()
-    out["SMA150"] = out["Close"].rolling(150).mean()
-    out["SMA200"] = out["Close"].rolling(200).mean()
-    out["LOW52"] = out["Close"].rolling(252).min()
-    out["HIGH52"] = out["Close"].rolling(252).max()
+    r = df.copy()
+    r["SMA50"]  = r["Close"].rolling(50).mean()
+    r["SMA150"] = r["Close"].rolling(150).mean()
+    r["SMA200"] = r["Close"].rolling(200).mean()
+    r["LOW52"]  = r["Close"].rolling(252).min()
+    r["HIGH52"] = r["Close"].rolling(252).max()
+    c1 = (r.SMA50 > r.SMA150) & (r.SMA50 > r.SMA200)
+    c2 = r.SMA150 > r.SMA200
+    c3 = (r.Close > r.SMA50) & (r.Close > r.SMA150) & (r.Close > r.SMA200)
+    c4 = r.Close > r.LOW52 * 1.3
+    c5 = r.Close >= r.HIGH52 * 0.75
+    r["SCORE"] = c1.astype(int)+c2.astype(int)+c3.astype(int)+c4.astype(int)+c5.astype(int)
+    return r
 
-    c1 = (out["SMA50"] > out["SMA150"]) & (out["SMA50"] > out["SMA200"])
-    c2 = out["SMA150"] > out["SMA200"]
-    c3 = (out["Close"] > out["SMA50"]) & (out["Close"] > out["SMA150"]) & (out["Close"] > out["SMA200"])
-    c4 = out["Close"] > out["LOW52"] * 1.3
-    c5 = out["Close"] >= out["HIGH52"] * 0.75
+assets = {t: add_minervini(df) for t, df in assets.items()}
 
-    out["SCORE"] = c1.astype(int) + c2.astype(int) + c3.astype(int) + c4.astype(int) + c5.astype(int)
-    return out
+# ── date window ──────────────────────────────────────────────────────────────
+latest  = max(df.index.max() for df in assets.values())
+window  = pd.date_range(latest - timedelta(days=29), latest, freq="D")
+counts  = pd.Series(index=window, dtype=int)
+for d in window:
+    counts[d] = sum(df.loc[d, "SCORE"]==5 if d in df.index else 0 for df in assets.values())
 
-for t in list(assets):
-    assets[t] = add_minervini(assets[t])
+# ── chart 1: line ────────────────────────────────────────────────────────────
+plt.figure(figsize=(10,4))
+plt.plot(counts.index, counts, marker="o")
+plt.title("Liczba aktywów 5/5 (30 dni)")
+plt.xlabel("Data"); plt.ylabel("Ilość"); plt.xticks(rotation=45)
+plt.tight_layout(); plt.savefig(LINE_IMG, dpi=110); plt.close()
 
-# ---------------------------------------------------------------------------
-# DATE WINDOW (30 calendar days back from latest common date)
-# ---------------------------------------------------------------------------
-latest = max(df.index.max() for df in assets.values())
-start = latest - timedelta(days=29)  # inclusive
-window = pd.date_range(start, latest, freq="D")
+# ── chart 2: dots ────────────────────────────────────────────────────────────
+color_map = {5:"#2ecc71", 4:"#7f8c8d"}  # green/grey, else red
+plt.figure(figsize=(6, max(4, len(assets)*0.4)))
+for y,(t,df) in enumerate(assets.items()):
+    s = int(df.loc[latest,"SCORE"])
+    plt.scatter(0, y, s=120, c=color_map.get(s,"#e74c3c"))
+plt.yticks(range(len(assets)), assets.keys()); plt.gca().xaxis.set_visible(False)
+plt.title(f"Status {latest.date()}")
+plt.tight_layout(); plt.savefig(DOT_IMG, dpi=110); plt.close()
 
-# ---------------------------------------------------------------------------
-# SERIES: HOW MANY MEET 5/5 EACH DAY
-# ---------------------------------------------------------------------------
-count_series = pd.Series(index=window, dtype=int).fillna(0)
-for day in window:
-    count_series.loc[day] = sum(
-        df.loc[day, "SCORE"] == 5 if day in df.index else 0 for df in assets.values()
-    )
+# ── html ─────────────────────────────────────────────────────────────────────
+HTML_OUT.write_text(f"""<!DOCTYPE html><html lang=pl><meta charset=UTF-8><title>Minervini {latest:%Y-%m-%d}</title>
+<style>body{{margin:0;background:#111;color:#ddd;font-family:Arial;text-align:center}}
+h1{{margin:1em 0;color:#fff}}img{{max-width:100%;border:1px solid #444;box-shadow:0 0 6px #000;margin:20px 0}}</style>
+<h1>Minervini – {latest:%Y-%m-%d}</h1>
+<img src='chart_counts.png'><img src='chart_status.png'>
+<p style='font-size:.8em'>zielony = 5/5, szary = 4/5, czerwony &lt; 4</p>""")
 
-# ---------------------------------------------------------------------------
-# PLOT 1 – LINE CHART
-# ---------------------------------------------------------------------------
-plt.figure(figsize=(10, 4))
-plt.plot(count_series.index, count_series.values, marker="o")
-plt.title("Liczba aktywów z wynikiem 5/5 (ostatnie 30 dni)")
-plt.xlabel("Data")
-plt.ylabel("Ilość")
-plt.xticks(rotation=45)
-plt.tight_layout()
-plt.savefig(LINE_IMG, dpi=110)
-plt.close()
-
-# ---------------------------------------------------------------------------
-# PLOT 2 – DOT STATUS FOR LATEST DAY
-# ---------------------------------------------------------------------------
-colors = {5: "#2ecc71", 4: "#7f8c8d"}  # green / grey
-
-tickers = list(assets.keys())
-y_pos = range(len(tickers))
-plt.figure(figsize=(6, max(4, len(tickers) * 0.4)))
-for y, t in zip(y_pos, tickers):
-    df = assets[t]
-    score = int(df.loc[latest, "SCORE"]) if latest in df.index else -99
-    col = colors.get(score, "#e74c3c")  # red default
-    plt.scatter(0, y, s=120, c=col)
-plt.yticks(y_pos, tickers)
-plt.gca().get_xaxis().set_visible(False)
-plt.title(f"Status aktywów vs kryteria (stan: {latest.date()})")
-plt.tight_layout()
-plt.savefig(DOT_IMG, dpi=110)
-plt.close()
+print("Generated →", HTML_OUT)
