@@ -1,0 +1,27 @@
+# ---------------------------------------------------------------------------
+# SIMPLE HTML
+# ---------------------------------------------------------------------------
+html = f"""<!DOCTYPE html>
+<html lang='pl'>
+<head>
+<meta charset='UTF-8'>
+<title>Minervini – auto‑update</title>
+<style>
+ body{{font-family:Arial,Helvetica,sans-serif;background:#111;color:#ddd;text-align:center;}}
+ h1{{margin:0.5em 0;color:#fff;}}
+ img{{max-width:100%;height:auto;border:1px solid #444;box-shadow:0 0 10px #000;margin-bottom:30px;}}
+ a{{color:#1abc9c;}}
+</style>
+</head>
+<body>
+  <h1>Minervini – {latest:%Y-%m-%d}</h1>
+  <img src='{os.path.basename(LINE_IMG)}' alt='Liczba aktywów 5/5'>
+  <img src='{os.path.basename(DOT_IMG)}' alt='Status aktywów'>
+  <p style='font-size:0.8em'>green = 5/5, grey = 4/5, red &lt; 4</p>
+</body>
+</html>"""
+
+with open(HTML_OUT, "w", encoding="utf-8") as f:
+    f.write(html)
+
+print("HTML + PNG ready → docs/")
