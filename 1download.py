@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
 Regenerates Minervini dashboard and drops it into docs/wyniki_minervini.html
-Run daily via GitHub Actions.  Requires yfinance, pandas, matplotlib.
-Images saved as PNG and referenced in the html – keeps GH‑Pages light.
+Run daily via GitHub Actions. Requires yfinance, pandas, matplotlib.
 """
 import base64
 import glob
@@ -19,6 +18,9 @@ DOCS_DIR = "docs"  # GH‑Pages points here
 LINE_IMG = os.path.join(DOCS_DIR, "chart_counts.png")
 DOT_IMG = os.path.join(DOCS_DIR, "chart_status.png")
 HTML_OUT = os.path.join(DOCS_DIR, "wyniki_minervini.html")
+
+# make sure docs/ exists (GH first run)
+os.makedirs(DOCS_DIR, exist_ok=True)
 
 # ---------------------------------------------------------------------------
 # LOAD DATA
@@ -42,7 +44,7 @@ for fp in csv_files:
 # ---------------------------------------------------------------------------
 
 def add_minervini(df: pd.DataFrame) -> pd.DataFrame:
-    """Return copy with SMA‑s, 52‑week hi/lo and score column."""
+    """Return copy with SMA-s, 52-week hi/lo and score column."""
     out = df.copy()
     out["SMA50"] = out["Close"].rolling(50).mean()
     out["SMA150"] = out["Close"].rolling(150).mean()
@@ -66,7 +68,7 @@ for t in list(assets):
 # DATE WINDOW (30 calendar days back from latest common date)
 # ---------------------------------------------------------------------------
 latest = max(df.index.max() for df in assets.values())
-start  = latest - timedelta(days=29)  # inclusive
+start = latest - timedelta(days=29)  # inclusive
 window = pd.date_range(start, latest, freq="D")
 
 # ---------------------------------------------------------------------------
